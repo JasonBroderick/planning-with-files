@@ -1,0 +1,220 @@
+---
+name: pwf-auto
+description: "Execute the active phase of a session-bound planning-with-files project through Hermes internal standing-goal continuation. Use when the user invokes /pwf-auto or asks Hermes to autonomously complete the next documented PWF phase without manually setting /goal."
+version: 2.0.0
+author: Hermes Agent
+license: MIT
+compatibility: hermes-agent
+allowed-tools:
+  - planning_with_files_status
+  - planning_with_files_start_auto
+  - planning_with_files_stop_auto
+  - planning_with_files_check_complete
+  - read_file
+  - patch
+  - write_file
+  - terminal
+metadata:
+  hermes:
+    tags: [pwf, autonomous, phases, goal, planning-with-files]
+    related_skills: [pwf, planning-with-files]
+---
+
+# PWF Auto
+
+## Overview
+
+This pipeline executes exactly one phase from the project bound by `pwf`. The user-facing command is:
+
+```text
+/pwf-auto
+```
+
+The skill does not ask the user to set `/goal`. The PWF plugin creates the Hermes standing goal internally for the current session, arms PWF autonomous mode, and derives the goal text from the active plan and phase. At the end of each agent turn, Hermes sees that persisted goal and schedules the next turn automatically.
+
+When the phase is verified complete or genuinely blocked, the skill calls the internal stop tool. That disarms PWF autonomous mode and marks the internal standing goal done. It does not automatically begin another phase. The user can review the result and invoke `/pwf-auto` again for the next phase.
+
+Design pattern: Pipeline.
+
+## Invocation contract
+
+`/pwf-auto` requires a project already bound through `pwf`. It takes no required arguments.
+
+The plugin is responsible for:
+
+- resolving the current session's bound project
+- resolving the active root or slug plan
+- deriving the current incomplete phase
+- generating a fresh 16-hex nonce
+- writing and verifying the SHA-256 plan attestation
+- resetting stale gate counters
+- writing `.mode` last so failed arming cannot leave a partially active run
+- activating Hermes `GoalManager` with the configured turn budget
+- rolling back PWF control files if goal activation fails
+
+## Pipeline
+
+### Step 1: inspect bound PWF state
+
+Call `planning_with_files_status` without `cwd`.
+
+Expected output:
+
+- `project_dir` identifies the exact bound workspace
+- `plan_dir` identifies the active root or slug plan
+- planning files exist
+- the current phase is named
+- the plan is not already complete
+
+Failure response:
+
+- If no project is bound, stop and tell the user to run `pwf` for the intended workspace.
+- If planning files do not exist, stop and tell the user to initialize through `pwf`.
+- If the plan is malformed or has no executable phase, report the exact structural issue.
+
+### Step 2: start internal autonomous continuation
+
+Call `planning_with_files_start_auto` with no arguments unless the user explicitly supplied a turn budget.
+
+Expected output:
+
+```json
+{
+  "ok": true,
+  "goal_active": true,
+  "project_dir": "/workspace/example",
+  "plan_dir": "/workspace/example",
+  "phase": "Phase 3: Implementation",
+  "max_turns": 20,
+  "mode": "autonomous"
+}
+```
+
+The tool sets the standing goal internally. Do not ask the user to invoke another command and do not create a cron job or secondary Hermes process.
+
+Failure response: stop before execution and report the tool's exact error. A failed start must leave the previous PWF control state intact.
+
+### Step 3: execute the phase
+
+Read `task_plan.md`, `findings.md`, and `progress.md` from `plan_dir`. Identify the checklist, expected outputs, verification requirements, and `## Next Step` for the active phase.
+
+For every work cycle:
+
+1. Take the next concrete action in the active phase.
+2. Verify the result using real tool output.
+3. Record discoveries, evidence, and failed attempts in `findings.md`.
+4. Record completed actions and verification in `progress.md`.
+5. Update `task_plan.md` immediately when checklist or phase state changes.
+6. Continue while executable work remains.
+
+A routine progress message is not a stop condition. The internal Hermes goal supplies the next turn after the current response.
+
+### Step 4: verify phase completion
+
+Before declaring the phase complete:
+
+1. Check every checklist item in that phase.
+2. Run the phase's stated tests, acceptance checks, or evidence probes.
+3. Update the phase status to `complete` only after verification passes.
+4. Update `## Current Phase` and `## Next Step` so the plan points to the next pending phase without starting it.
+5. Call `planning_with_files_check_complete` to record whether the whole plan is also complete.
+
+If verification fails, keep the current phase `in_progress` and continue with a changed strategy.
+
+### Step 5: stop the internal loop
+
+When the active phase is complete, call:
+
+```text
+planning_with_files_stop_auto
+```
+
+Pass a concise reason that names the completed phase and its verification evidence. The tool disarms PWF mode and marks the internal standing goal done.
+
+If a genuine external blocker requires user input, record it in both PWF files and call the same stop tool with the blocker as the reason. Do not leave a blocked autonomous goal running.
+
+## Stop conditions
+
+Stop only when one of these is true:
+
+- the active phase is verified complete
+- a genuine external dependency requires user input
+- the same action fails twice with no new evidence or changed strategy
+- the internal Hermes turn budget is exhausted
+- the user interrupts the run
+
+A stopped phase is not permission to start the next phase automatically.
+
+## Anti-patterns
+
+| Do not | Do instead |
+| --- | --- |
+| Ask the user to run `/goal` | Call `planning_with_files_start_auto` internally |
+| Require arguments for `/pwf-auto` | Derive project and phase from the session binding and plan |
+| Start a cron loop | Use Hermes's native standing-goal continuation |
+| Continue into the next phase | Stop after the selected phase and wait for another `/pwf-auto` |
+| Leave `.mode` active after completion | Call `planning_with_files_stop_auto` |
+| Retry an unchanged failure indefinitely | Change strategy once, then stop with evidence if still blocked |
+
+## Error handling
+
+Fail fast and report for missing binding, missing plan, malformed phase state, arming failure, attestation failure, or goal-storage failure. The start tool performs transactional rollback if activation fails.
+
+For execution failures, make one evidence-based strategy change and retry. Stop after a second unchanged failure and record the exact blocker.
+
+## Output format
+
+Start output:
+
+```text
+PWF auto: started
+project: /workspace/example
+phase: Phase 3: Implementation
+continuation: active internally
+turn budget: 20
+```
+
+Completion output:
+
+```text
+PWF auto: phase complete
+project: /workspace/example
+phase: Phase 3: Implementation
+verification: 128 tests passed
+next phase: Phase 4: Acceptance
+internal continuation: stopped
+```
+
+Blocked output:
+
+```text
+PWF auto: blocked
+project: /workspace/example
+phase: Phase 3: Implementation
+blocker: required production credential is unavailable
+needed: credential access
+internal continuation: stopped
+```
+
+## Gotchas
+
+- `/pwf-auto` operates on the session binding, not the gateway process directory.
+- The phase named under `## Current Phase` should agree with the phase carrying `**Status:** in_progress`.
+- Root plans use `.plan-attestation`; slug plans use `.attestation`. The plugin derives the correct location.
+- Intentional `task_plan.md` edits change the attested hash. The active PWF hook and plugin must treat recorded plan updates as intentional state changes.
+- Hermes's goal budget is finite. Exhaustion stops continuation rather than running indefinitely.
+- The skill completes one phase per invocation, even when the whole plan contains additional pending phases.
+
+## Verification checklist
+
+- [ ] Session resolves to the intended bound project
+- [ ] Active plan and phase are derived without user arguments
+- [ ] Internal start tool reports `goal_active: true`
+- [ ] PWF mode, nonce, and attestation are armed successfully
+- [ ] Phase work uses real verification output
+- [ ] Findings and progress contain evidence and failed attempts
+- [ ] Phase status changes only after verification
+- [ ] Next phase is documented but not started
+- [ ] Internal stop tool is called on completion or blocker
+- [ ] PWF autonomous mode is disarmed before the final response
+- [ ] User needed only `/pwf` and `/pwf-auto`

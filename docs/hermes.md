@@ -2,12 +2,14 @@
 
 This repository ships a Hermes adapter for persistent planning, session-scoped project selection, and structure-aware plan injection.
 
-The adapter has two parts:
+The adapter has two components: one plugin and three coordinated skills:
 
-- `.hermes/skills/planning-with-files/` contains the Hermes workflow skill and its bundled templates and scripts.
+- `.hermes/skills/planning-with-files/` contains the canonical Hermes workflow skill and bundled templates and scripts.
+- `.hermes/skills/pwf/` contains the session-binding command skill.
+- `.hermes/skills/pwf-auto/` contains the autonomous single-phase command skill.
 - `.hermes/plugins/planning-with-files/` contains the plugin that provides planning tools and lifecycle hooks.
 
-Install both from the same repository commit. The plugin executes the canonical smart injector from the skill bundle, so mixing versions can produce inconsistent behavior.
+Install all four directories from the same repository commit. The plugin executes the canonical smart injector from the skill bundle, so mixing versions can produce inconsistent behavior.
 
 ## What the Adapter Provides
 
@@ -51,13 +53,17 @@ export PWF_REPO="${PWF_REPO:-$HOME/src/planning-with-files}"
 PWF_REPO="$(cd "$PWF_REPO" && pwd -P)"
 
 test -f "$PWF_REPO/.hermes/plugins/planning-with-files/plugin.yaml"
-test -f "$PWF_REPO/.hermes/skills/planning-with-files/SKILL.md"
+for skill in planning-with-files pwf pwf-auto; do
+  test -f "$PWF_REPO/.hermes/skills/$skill/SKILL.md"
+done
 
 mkdir -p "$HERMES_HOME/plugins" "$HERMES_HOME/skills"
 
 for target in \
   "$HERMES_HOME/plugins/planning-with-files" \
-  "$HERMES_HOME/skills/planning-with-files"
+  "$HERMES_HOME/skills/planning-with-files" \
+  "$HERMES_HOME/skills/pwf" \
+  "$HERMES_HOME/skills/pwf-auto"
 do
   if [ -e "$target" ] || [ -L "$target" ]; then
     printf 'Refusing to replace existing path: %s\n' "$target" >&2
@@ -69,9 +75,11 @@ ln -s \
   "$PWF_REPO/.hermes/plugins/planning-with-files" \
   "$HERMES_HOME/plugins/planning-with-files"
 
-ln -s \
-  "$PWF_REPO/.hermes/skills/planning-with-files" \
-  "$HERMES_HOME/skills/planning-with-files"
+for skill in planning-with-files pwf pwf-auto; do
+  ln -s \
+    "$PWF_REPO/.hermes/skills/$skill" \
+    "$HERMES_HOME/skills/$skill"
+done
 ```
 
 The refusal check is intentional. Inspect and back up any previous copied installation before replacing it.
@@ -129,8 +137,10 @@ For a foreground gateway or container, restart that process through its normal s
 test "$(readlink -f "$HERMES_HOME/plugins/planning-with-files")" = \
   "$PWF_REPO/.hermes/plugins/planning-with-files"
 
-test "$(readlink -f "$HERMES_HOME/skills/planning-with-files")" = \
-  "$PWF_REPO/.hermes/skills/planning-with-files"
+for skill in planning-with-files pwf pwf-auto; do
+  test "$(readlink -f "$HERMES_HOME/skills/$skill")" = \
+    "$PWF_REPO/.hermes/skills/$skill"
+done
 
 hermes plugins list --plain --no-bundled
 python3 -m unittest \
