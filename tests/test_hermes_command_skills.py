@@ -17,6 +17,7 @@ class HermesCommandSkillPackagingTests(unittest.TestCase):
         self.assertIn("${HERMES_HOME:-$HOME/.hermes}", skill)
         self.assertNotIn("/workspace/skills/productivity", skill)
         self.assertTrue(reference.is_file())
+        self.assertIn("Live plugin file-parity probe", reference.read_text(encoding="utf-8"))
 
     def test_pwf_auto_skill_is_packaged_with_goal_tools(self):
         skill = (SKILLS_ROOT / "pwf-auto" / "SKILL.md").read_text(encoding="utf-8")
@@ -25,6 +26,8 @@ class HermesCommandSkillPackagingTests(unittest.TestCase):
         self.assertIn("planning_with_files_start_auto", skill)
         self.assertIn("planning_with_files_stop_auto", skill)
         self.assertIn("The skill does not ask the user to set `/goal`", skill)
+        self.assertIn("Step 0: verify the live adapter", skill)
+        self.assertTrue((SKILLS_ROOT / "pwf-auto" / "references" / "packaging-and-publishing.md").is_file())
 
     def test_install_documentation_links_all_coordinated_skills(self):
         docs = (REPO_ROOT / "docs" / "hermes.md").read_text(encoding="utf-8")

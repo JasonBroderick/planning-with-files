@@ -1,7 +1,7 @@
 ---
 name: pwf-auto
 description: "Execute the active phase of a session-bound planning-with-files project through Hermes internal standing-goal continuation. Use when the user invokes /pwf-auto or asks Hermes to autonomously complete the next documented PWF phase without manually setting /goal."
-version: 2.1.0
+version: 2.2.0
 author: Hermes Agent
 license: MIT
 compatibility: hermes-agent
@@ -17,7 +17,7 @@ allowed-tools:
 metadata:
   hermes:
     tags: [pwf, autonomous, phases, goal, planning-with-files]
-    related_skills: [pwf, planning-with-files]
+    related_skills: [pwf, planning-with-files, pwf-doctor]
 ---
 
 # PWF Auto
@@ -56,6 +56,10 @@ The plugin is responsible for:
 
 ## Pipeline
 
+### Step 0: verify the live adapter after an update
+
+If plugin Python files changed since the last successful `/pwf-auto` run, do not rely on the manifest version alone. Confirm the live plugin contains every repository module, import the live package in a fresh Hermes Python process, and complete a session-bound status call before starting autonomous mode. Per-file symlink deployments must explicitly add newly introduced modules. Restart only after this preflight passes.
+
 ### Step 1: inspect bound PWF state
 
 Call `planning_with_files_status` without `cwd`.
@@ -72,7 +76,7 @@ Failure response:
 
 - If no project is bound, stop and tell the user to run `pwf` for the intended workspace.
 - If planning files do not exist, stop and tell the user to initialize through `pwf`.
-- If the plan is malformed or has no executable phase, report the exact structural issue.
+- If the plan is malformed or has no executable phase, use `pwf-doctor` or report the exact structural issue.
 
 ### Step 2: start internal autonomous continuation
 
@@ -201,6 +205,21 @@ blocker: required production credential is unavailable
 needed: credential access
 internal continuation: stopped
 ```
+
+## Distribution contract
+
+The two-command experience is not portable if only the Python plugin is committed. A distributable Hermes package must keep the canonical `planning-with-files` skill, `pwf`, `pwf-auto`, and the plugin together at one repository commit.
+
+When changing this workflow:
+
+1. Include both user-facing skills and all support files in the repository.
+2. Replace installation-specific paths and personal examples before publishing.
+3. Update installation documentation for all coordinated directories.
+4. Add packaging tests for skill presence, portable paths, and required internal tool names.
+5. Run SkillCheck for both command skills and the full repository suite.
+6. Push the branch, compare local and remote SHAs, and fetch both remote skill files by immutable commit SHA before claiming they are on GitHub.
+
+See [references/packaging-and-publishing.md](references/packaging-and-publishing.md) for the artifact map and release verification sequence.
 
 ## Gotchas
 

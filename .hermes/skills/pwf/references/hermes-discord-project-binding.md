@@ -38,6 +38,20 @@ PWF_INJECT=smart sh "$HERMES_HOME/skills/planning-with-files/scripts/inject-plan
 
 Smart injection selects the title, Goal, Next Step, Current Phase, active phase, recent decisions, and recent progress within a bounded byte budget.
 
+## Live plugin file-parity probe
+
+Some Hermes hosts deploy a plugin as individual source-file symlinks rather than one directory-level link. A plugin update that adds a Python module can therefore leave the manifest and existing files current while the live package is not importable.
+
+Before declaring an adapter update live:
+
+1. Enumerate repository plugin files and live plugin files, following symlinks.
+2. Confirm every new Python module exists in the live package.
+3. Import the live package in a fresh Hermes Python process. A missing relative import fails acceptance even if `hermes plugins list` shows the new manifest version.
+4. Run bind with the current opaque runtime session identity, then resume-safe init and status without `cwd`.
+5. Restart only after file parity and fresh import pass. After restart, verify the plugin is enabled and repeat status without `cwd`.
+
+Prefer a directory-level symlink for development deployments because new modules arrive automatically. If host permissions require per-file symlinks, treat file-set parity as a deployment checklist item.
+
 ## Autonomous phase execution
 
 Keep these capabilities distinct:

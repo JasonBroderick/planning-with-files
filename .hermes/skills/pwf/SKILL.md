@@ -1,7 +1,7 @@
 ---
 name: pwf
 description: "Create or resume a planning-with-files session by binding the current Hermes session to a named workspace and maintaining task_plan.md, findings.md, and progress.md. Use when the user invokes /pwf, asks to run PWF inside a workspace, or wants to resume a file-backed project plan."
-version: 1.1.0
+version: 1.2.0
 author: Hermes Agent
 license: MIT
 compatibility: hermes-agent
@@ -16,7 +16,7 @@ allowed-tools:
 metadata:
   hermes:
     tags: [pwf, planning-with-files, planning, task_plan, resume]
-    related_skills: [planning-with-files, pwf-auto]
+    related_skills: [planning-with-files, pwf-auto, pwf-doctor]
 ---
 
 # PWF
@@ -79,7 +79,11 @@ Then call `planning_with_files_status` without `cwd` and verify:
 
 If the plan existed, read all three files before continuing. If it was created, populate its goal, phases, statuses, and `## Next Step` before execution begins.
 
-### Step 5: keep planning state current
+### Step 5: verify the live adapter after updates
+
+Do not accept a new manifest version as proof that the live plugin imports. Compare the repository plugin file set with the live plugin file set, following symlinks; import the live package in a fresh Hermes Python process; then run bind, resume-safe init, and status without `cwd`. Per-file symlink deployments must explicitly add every newly introduced Python module. Restart only after file parity and fresh import pass.
+
+### Step 6: keep planning state current
 
 During work:
 
@@ -104,6 +108,7 @@ For autonomous execution of the active phase, use `pwf-auto` after binding.
 
 ## Gotchas
 
+- A reported plugin version can be current while a per-file deployment omits a new module. File parity and a fresh import are required after adapter updates.
 - A tool-level `cd` does not change the long-running gateway process directory. Session binding is required.
 - A subdirectory is not automatically the project root. Avoid creating duplicate planning triples.
 - An active `.planning/<slug>/` plan can intentionally shadow a root plan.
