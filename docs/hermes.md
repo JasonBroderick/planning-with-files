@@ -15,6 +15,8 @@ Install both from the same repository commit. The plugin executes the canonical 
 - `planning_with_files_unbind_project` removes only the current session's binding.
 - `planning_with_files_init` creates `task_plan.md`, `findings.md`, and `progress.md` without replacing existing files.
 - `planning_with_files_status` summarizes the bound or explicitly selected project.
+- `planning_with_files_start_auto` transactionally arms the active plan and activates a Hermes standing goal for its current phase.
+- `planning_with_files_stop_auto` disarms autonomous mode and marks the internal phase goal done.
 - `planning_with_files_check_complete` runs the canonical completion check.
 - `pre_llm_call` injects Goal, Next Step, Current Phase, the active phase, recent decisions, and recent progress through canonical `inject-plan.sh` smart mode.
 - `post_tool_call` queues session-scoped planning reminders after write-like tools.
@@ -178,13 +180,25 @@ Start Hermes from that repository. This route is less suitable for a long-runnin
 
 ### Start or resume a project
 
-Ask Hermes:
+Use the `pwf` skill command with a workspace label:
 
 ```text
-Bind planning-with-files to /absolute/path/to/project, initialize it if needed, show status, and continue the current Next Step.
+/pwf run pwf inside Oracle
 ```
 
-The agent should call `planning_with_files_bind_project` first. The plugin stores the binding against the opaque session identity supplied by Hermes.
+The skill resolves the label against allowed PWF roots, then calls `planning_with_files_bind_project`, `planning_with_files_init`, and `planning_with_files_status`. Existing planning files are preserved and resumed. The user does not need to know the absolute workspace path when the label has one unambiguous match.
+
+### Run the active phase autonomously
+
+After the workspace is bound, use:
+
+```text
+/pwf-auto
+```
+
+The skill calls `planning_with_files_start_auto` without requiring user arguments. The plugin derives the active phase, arms mode, nonce, counters, and plan attestation transactionally, then persists an active Hermes `GoalManager` record for the current session. The gateway detects that goal at the end of the same turn and queues continuation turns automatically.
+
+The run stops after the selected phase, not after the entire plan. On verified completion or a genuine blocker, the skill calls `planning_with_files_stop_auto`, which disarms PWF mode and marks the internal goal done. The user does not need to invoke `/goal` directly.
 
 ### Switch the current session
 

@@ -7,6 +7,8 @@ provides_tools:
   - planning_with_files_unbind_project
   - planning_with_files_init
   - planning_with_files_status
+  - planning_with_files_start_auto
+  - planning_with_files_stop_auto
   - planning_with_files_check_complete
 provides_hooks:
   - pre_llm_call

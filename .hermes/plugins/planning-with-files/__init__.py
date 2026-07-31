@@ -7,7 +7,9 @@ from .tools import (
     planning_with_files_bind_project,
     planning_with_files_check_complete,
     planning_with_files_init,
+    planning_with_files_start_auto,
     planning_with_files_status,
+    planning_with_files_stop_auto,
     planning_with_files_unbind_project,
 )
 
@@ -95,6 +97,54 @@ def register(ctx: Any) -> None:
             platform=_runtime_platform(kw),
         ),
         description="Show planning-with-files status summary.",
+    )
+    ctx.register_tool(
+        name="planning_with_files_start_auto",
+        toolset="terminal",
+        schema={
+            "name": "planning_with_files_start_auto",
+            "description": "Arm the bound PWF plan and activate a Hermes standing goal for its current phase.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "max_turns": {
+                        "type": "integer",
+                        "description": "Optional goal turn budget. Defaults to Hermes goals.max_turns.",
+                        "minimum": 1,
+                        "maximum": 1000,
+                    },
+                },
+            },
+        },
+        handler=lambda args, **kw: planning_with_files_start_auto(
+            session_id=_runtime_session(kw),
+            platform=_runtime_platform(kw),
+            max_turns=args.get("max_turns", 0),
+        ),
+        description="Start autonomous execution of the bound PWF plan's active phase.",
+    )
+    ctx.register_tool(
+        name="planning_with_files_stop_auto",
+        toolset="terminal",
+        schema={
+            "name": "planning_with_files_stop_auto",
+            "description": "Disarm PWF autonomous mode and mark the current Hermes standing goal done.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "type": "string",
+                        "description": "Verified completion reason stored with the goal.",
+                    },
+                },
+            },
+        },
+        handler=lambda args, **kw: planning_with_files_stop_auto(
+            session_id=_runtime_session(kw),
+            platform=_runtime_platform(kw),
+            reason=args.get("reason", "PWF phase completed and verified"),
+        ),
+        description="Stop autonomous PWF phase execution cleanly.",
     )
     ctx.register_tool(
         name="planning_with_files_check_complete",

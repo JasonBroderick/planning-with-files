@@ -543,6 +543,115 @@ class HermesSessionProjectTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(project.resolve(), bindings.resolve_bound_project("task-id-session"))
 
+    def test_auto_start_derives_phase_arms_plan_and_sets_goal(self) -> None:
+        project = self.make_project("auto", "AUTO_PHASE")
+        self.assertTrue(self.bind("auto-session", project)["ok"])
+        manager = mock.Mock()
+        manager.set.return_value = mock.Mock(max_turns=12)
+
+        with mock.patch.object(tools, "_build_goal_manager", return_value=manager, create=True):
+            result = json.loads(
+                tools.planning_with_files_start_auto(
+                    session_id="auto-session",
+                    max_turns=12,
+                )
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["goal_active"])
+        self.assertEqual("Phase 2: AUTO_PHASE", result["phase"])
+        self.assertEqual(12, result["max_turns"])
+        self.assertEqual("autonomous", project.joinpath(".mode").read_text(encoding="utf-8").strip())
+        self.assertEqual("0", project.joinpath(".stop_blocks").read_text(encoding="utf-8").strip())
+        nonce = project.joinpath(".nonce").read_text(encoding="utf-8").strip()
+        self.assertRegex(nonce, r"^[0-9a-f]{16}$")
+        attestation = project.joinpath(".plan-attestation").read_text(encoding="utf-8").strip()
+        self.assertRegex(attestation, r"^[0-9a-f]{64}$")
+        goal = manager.set.call_args.args[0]
+        self.assertIn("Phase 2: AUTO_PHASE", goal)
+        self.assertIn(str(project.resolve()), goal)
+        self.assertEqual(12, manager.set.call_args.kwargs["max_turns"])
+
+    def test_auto_start_uses_configured_goal_budget(self) -> None:
+        project = self.make_project("budget", "BUDGET")
+        self.bind("budget-session", project)
+        manager = mock.Mock()
+        manager.set.return_value = mock.Mock(max_turns=37)
+        with (
+            mock.patch.object(tools, "_configured_goal_max_turns", return_value=37, create=True),
+            mock.patch.object(tools, "_build_goal_manager", return_value=manager, create=True),
+        ):
+            result = json.loads(tools.planning_with_files_start_auto(session_id="budget-session"))
+        self.assertTrue(result["ok"])
+        self.assertEqual(37, result["max_turns"])
+        self.assertEqual(37, manager.set.call_args.kwargs["max_turns"])
+
+    def test_auto_start_refuses_missing_session_binding_or_plan(self) -> None:
+        no_session = json.loads(tools.planning_with_files_start_auto(session_id=""))
+        unbound = json.loads(tools.planning_with_files_start_auto(session_id="unbound-auto"))
+        project = self.workspace / "no-plan"
+        project.mkdir()
+        self.bind("no-plan-session", project)
+        no_plan = json.loads(tools.planning_with_files_start_auto(session_id="no-plan-session"))
+        self.assertFalse(no_session["ok"])
+        self.assertFalse(unbound["ok"])
+        self.assertFalse(no_plan["ok"])
+
+    def test_auto_start_rolls_back_controls_when_goal_activation_fails(self) -> None:
+        project = self.make_project("rollback", "ROLLBACK")
+        self.bind("rollback-session", project)
+        project.joinpath(".mode").write_text("previous\n", encoding="utf-8")
+        manager = mock.Mock()
+        manager.set.side_effect = RuntimeError("goal storage unavailable")
+        with mock.patch.object(tools, "_build_goal_manager", return_value=manager, create=True):
+            result = json.loads(tools.planning_with_files_start_auto(session_id="rollback-session"))
+        self.assertFalse(result["ok"])
+        self.assertEqual("previous", project.joinpath(".mode").read_text(encoding="utf-8").strip())
+        self.assertFalse(project.joinpath(".nonce").exists())
+        self.assertFalse(project.joinpath(".stop_blocks").exists())
+        self.assertFalse(project.joinpath(".plan-attestation").exists())
+
+    def test_plugin_registers_auto_start_and_stop_tools_with_no_required_arguments(self) -> None:
+        ctx = FakeContext()
+        plugin.register(ctx)
+        self.assertIn("planning_with_files_start_auto", ctx.tools)
+        self.assertIn("planning_with_files_stop_auto", ctx.tools)
+        project = self.make_project("registered-auto", "REGISTERED_AUTO")
+        self.bind("registered-auto-session", project)
+        manager = mock.Mock()
+        manager.set.return_value = mock.Mock(max_turns=20)
+        with mock.patch.object(tools, "_build_goal_manager", return_value=manager, create=True):
+            result = json.loads(
+                ctx.tools["planning_with_files_start_auto"](
+                    {},
+                    session_id="registered-auto-session",
+                    platform="discord",
+                )
+            )
+        self.assertTrue(result["ok"])
+
+    def test_auto_stop_disarms_plan_and_marks_goal_done(self) -> None:
+        project = self.make_project("stop-auto", "STOP_AUTO")
+        self.bind("stop-auto-session", project)
+        for name, content in (
+            (".mode", "autonomous\n"),
+            (".nonce", "1234567890abcdef\n"),
+            (".stop_blocks", "0\n"),
+            (".gate_last_ledger", "2\n"),
+        ):
+            project.joinpath(name).write_text(content, encoding="utf-8")
+        project.joinpath(".plan-attestation").write_text("a" * 64 + "\n", encoding="utf-8")
+        manager = mock.Mock()
+        manager.is_active.return_value = True
+        with mock.patch.object(tools, "_build_goal_manager", return_value=manager, create=True):
+            result = json.loads(tools.planning_with_files_stop_auto(session_id="stop-auto-session"))
+        self.assertTrue(result["ok"])
+        self.assertEqual("default", result["mode"])
+        self.assertTrue(project.joinpath(".plan-attestation").exists())
+        for name in (".mode", ".nonce", ".stop_blocks", ".gate_last_ledger"):
+            self.assertFalse(project.joinpath(name).exists())
+        manager.mark_done.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,10 +1,12 @@
+import importlib
 import json
 import subprocess
 from pathlib import Path
 
+from .auto_mode import arm_autonomous, disarm_autonomous, restore_controls, snapshot_controls
 from .hook_state import clear_reminders
 from .paths import normalize_cwd, resolve_skill_dir
-from .planning_files import ensure_planning_files, summarize_status
+from .planning_files import ensure_planning_files, extract_current_phase, resolve_active_plan_dir, summarize_status
 from .project_bindings import (
     BindingError,
     BindingStoreError,
@@ -86,6 +88,117 @@ def planning_with_files_status(cwd: str = "", session_id: str = "", platform: st
     except (BindingError, BindingStoreError) as exc:
         return _error_result(exc)
     return json.dumps(result, ensure_ascii=False)
+
+
+def _configured_goal_max_turns() -> int:
+    try:
+        config_module = importlib.import_module("hermes_cli.config")
+        configured = (config_module.load_config() or {}).get("goals") or {}
+        return int(configured.get("max_turns", 20) or 20)
+    except Exception:
+        return 20
+
+
+def _build_goal_manager(session_id: str, max_turns: int):
+    goals_module = importlib.import_module("hermes_cli.goals")
+    return goals_module.GoalManager(session_id=session_id, default_max_turns=max_turns)
+
+
+def planning_with_files_start_auto(
+    session_id: str = "",
+    platform: str = "",
+    max_turns: int = 0,
+) -> str:
+    del platform
+    clean_session = str(session_id or "").strip()
+    if not clean_session:
+        return _error_result(ValueError("Hermes did not provide a session identity."))
+
+    try:
+        project_dir = _project_dir("", clean_session)
+        plan_dir = resolve_active_plan_dir(project_dir)
+        if plan_dir is None:
+            raise ValueError("No active PWF plan found. Run /pwf first.")
+        task_plan = plan_dir.joinpath("task_plan.md").read_text(encoding="utf-8")
+        status = summarize_status(project_dir)
+        counts = status.get("counts") or {}
+        if counts.get("total", 0) and counts.get("complete", 0) >= counts.get("total", 0):
+            raise ValueError("The bound PWF plan is already complete.")
+        phase = extract_current_phase(task_plan)
+        if phase == "No phase found":
+            raise ValueError("The active task plan has no executable phase.")
+        turn_budget = int(max_turns or _configured_goal_max_turns())
+        if turn_budget < 1 or turn_budget > 1000:
+            raise ValueError("max_turns must be between 1 and 1000")
+    except (BindingError, BindingStoreError, OSError, ValueError) as exc:
+        return _error_result(exc)
+
+    snapshot = snapshot_controls(project_dir, plan_dir)
+    try:
+        armed = arm_autonomous(project_dir, plan_dir)
+        goal = (
+            f"Complete the active PWF phase '{phase}' in the bound project at {project_dir}. "
+            "Read task_plan.md, findings.md, and progress.md before acting. Execute the phase's "
+            "next concrete step, verify real results, keep the PWF files current, and continue "
+            "until this phase is complete. Stop only if the phase is verified complete or a "
+            "genuine external blocker requires user input."
+        )
+        manager = _build_goal_manager(clean_session, turn_budget)
+        state = manager.set(goal, max_turns=turn_budget)
+    except Exception as exc:
+        try:
+            restore_controls(snapshot)
+        except Exception as rollback_exc:
+            return _error_result(RuntimeError(f"auto-start failed: {exc}; rollback failed: {rollback_exc}"))
+        return _error_result(exc)
+
+    return json.dumps(
+        {
+            "ok": True,
+            "goal_active": True,
+            "project_dir": str(project_dir),
+            "plan_dir": str(plan_dir),
+            "phase": phase,
+            "goal": goal,
+            "max_turns": int(getattr(state, "max_turns", turn_budget)),
+            "mode": armed["mode"],
+            "nonce": armed["nonce"],
+            "attestation": armed["attestation"],
+            "attestation_file": armed["attestation_file"],
+        },
+        ensure_ascii=False,
+    )
+
+
+def planning_with_files_stop_auto(
+    session_id: str = "",
+    platform: str = "",
+    reason: str = "PWF phase completed and verified",
+) -> str:
+    del platform
+    clean_session = str(session_id or "").strip()
+    if not clean_session:
+        return _error_result(ValueError("Hermes did not provide a session identity."))
+    try:
+        project_dir = _project_dir("", clean_session)
+        plan_dir = resolve_active_plan_dir(project_dir)
+        if plan_dir is None:
+            raise ValueError("No active PWF plan found. Run /pwf first.")
+        result = disarm_autonomous(project_dir, plan_dir)
+        manager = _build_goal_manager(clean_session, _configured_goal_max_turns())
+        if manager.is_active():
+            manager.mark_done(str(reason or "PWF phase completed and verified").strip())
+    except (BindingError, BindingStoreError, OSError, RuntimeError, ValueError) as exc:
+        return _error_result(exc)
+    return json.dumps(
+        {
+            "ok": True,
+            "project_dir": str(project_dir),
+            "plan_dir": str(plan_dir),
+            **result,
+        },
+        ensure_ascii=False,
+    )
 
 
 def planning_with_files_check_complete(
