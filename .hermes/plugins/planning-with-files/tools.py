@@ -91,12 +91,14 @@ def planning_with_files_status(cwd: str = "", session_id: str = "", platform: st
 
 
 def _configured_goal_max_turns() -> int:
+    goals_module = importlib.import_module("hermes_cli.goals")
+    default_max_turns = int(goals_module.DEFAULT_MAX_TURNS)
     try:
         config_module = importlib.import_module("hermes_cli.config")
         configured = (config_module.load_config() or {}).get("goals") or {}
-        return int(configured.get("max_turns", 20) or 20)
+        return int(configured.get("max_turns", default_max_turns) or default_max_turns)
     except Exception:
-        return 20
+        return default_max_turns
 
 
 def _build_goal_manager(session_id: str, max_turns: int):

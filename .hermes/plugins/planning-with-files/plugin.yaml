@@ -1,5 +1,5 @@
 name: planning-with-files
-version: 0.2.0
+version: 0.3.0
 description: Hermes adapter for persistent planning files, session-scoped project bindings, and smart context injection.
 author: planning-with-files contributors
 provides_tools:

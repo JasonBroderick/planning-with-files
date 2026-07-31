@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .goal_budget import install_goal_budget_bridge
 from .hooks import post_tool_call, pre_llm_call
 from .tools import (
     planning_with_files_bind_project,
@@ -23,6 +24,7 @@ def _runtime_platform(kwargs: dict[str, Any]) -> str:
 
 
 def register(ctx: Any) -> None:
+    install_goal_budget_bridge()
     ctx.register_tool(
         name="planning_with_files_bind_project",
         toolset="terminal",

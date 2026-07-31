@@ -1,7 +1,7 @@
 ---
 name: pwf-auto
 description: "Execute the active phase of a session-bound planning-with-files project through Hermes internal standing-goal continuation. Use when the user invokes /pwf-auto or asks Hermes to autonomously complete the next documented PWF phase without manually setting /goal."
-version: 2.0.0
+version: 2.1.0
 author: Hermes Agent
 license: MIT
 compatibility: hermes-agent
@@ -50,6 +50,8 @@ The plugin is responsible for:
 - resetting stale gate counters
 - writing `.mode` last so failed arming cannot leave a partially active run
 - activating Hermes `GoalManager` with the configured turn budget
+- inheriting Hermes core's `DEFAULT_MAX_TURNS` when `goals.max_turns` is absent
+- installing a PWF-scoped goal-budget bridge that disarms autonomous controls on exhaustion
 - rolling back PWF control files if goal activation fails
 
 ## Pipeline
@@ -85,12 +87,12 @@ Expected output:
   "project_dir": "/workspace/example",
   "plan_dir": "/workspace/example",
   "phase": "Phase 3: Implementation",
-  "max_turns": 20,
+  "max_turns": 50,
   "mode": "autonomous"
 }
 ```
 
-The tool sets the standing goal internally. Do not ask the user to invoke another command and do not create a cron job or secondary Hermes process.
+The numeric budget shown above is illustrative. The tool reports the active `goals.max_turns` value from Hermes configuration, or Hermes core's own `DEFAULT_MAX_TURNS` when that key is absent. The tool sets the standing goal internally. Do not ask the user to invoke another command and do not create a cron job or secondary Hermes process.
 
 Failure response: stop before execution and report the tool's exact error. A failed start must leave the previous PWF control state intact.
 
@@ -133,6 +135,8 @@ Pass a concise reason that names the completed phase and its verification eviden
 
 If a genuine external blocker requires user input, record it in both PWF files and call the same stop tool with the blocker as the reason. Do not leave a blocked autonomous goal running.
 
+If the standing-goal budget is exhausted before completion, the plugin preserves the paused goal and incomplete planning files, disarms `.mode`, `.nonce`, `.stop_blocks`, and `.gate_last_ledger`, preserves the plan attestation, and replaces Hermes's `/goal resume` notice with an instruction to run `/pwf-auto`. A later `/pwf-auto` invocation re-arms the same incomplete phase with a fresh bounded budget. The plugin never renews the budget silently.
+
 ## Stop conditions
 
 Stop only when one of these is true:
@@ -154,6 +158,8 @@ A stopped phase is not permission to start the next phase automatically.
 | Start a cron loop | Use Hermes's native standing-goal continuation |
 | Continue into the next phase | Stop after the selected phase and wait for another `/pwf-auto` |
 | Leave `.mode` active after completion | Call `planning_with_files_stop_auto` |
+| Leave `.mode` active after budget exhaustion | Let the installed goal-budget bridge disarm controls and direct continuation through `/pwf-auto` |
+| Silently renew an exhausted goal budget | Pause safely and require a new `/pwf-auto` invocation |
 | Retry an unchanged failure indefinitely | Change strategy once, then stop with evidence if still blocked |
 
 ## Error handling
@@ -171,7 +177,7 @@ PWF auto: started
 project: /workspace/example
 phase: Phase 3: Implementation
 continuation: active internally
-turn budget: 20
+turn budget: <configured goals.max_turns>
 ```
 
 Completion output:
@@ -202,7 +208,7 @@ internal continuation: stopped
 - The phase named under `## Current Phase` should agree with the phase carrying `**Status:** in_progress`.
 - Root plans use `.plan-attestation`; slug plans use `.attestation`. The plugin derives the correct location.
 - Intentional `task_plan.md` edits change the attested hash. The active PWF hook and plugin must treat recorded plan updates as intentional state changes.
-- Hermes's goal budget is finite. Exhaustion stops continuation rather than running indefinitely.
+- Hermes's goal budget is finite and inherited from `goals.max_turns`, falling back to Hermes core's own default. Exhaustion pauses the goal, disarms PWF autonomous controls, preserves the incomplete phase, and routes continuation through `/pwf-auto` rather than `/goal resume`.
 - The skill completes one phase per invocation, even when the whole plan contains additional pending phases.
 
 ## Verification checklist

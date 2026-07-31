@@ -8,6 +8,7 @@ import stat
 import sys
 import tempfile
 import threading
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -16,6 +17,28 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = REPO_ROOT / ".hermes" / "plugins" / "planning-with-files"
 MODULE_PATH = PLUGIN_ROOT / "__init__.py"
 PACKAGE_NAME = "planning_with_files_session_test_plugin"
+
+
+if "hermes_cli.goals" not in sys.modules:
+    hermes_cli_module = types.ModuleType("hermes_cli")
+    hermes_cli_module.__path__ = []
+    goals_module = types.ModuleType("hermes_cli.goals")
+    config_module = types.ModuleType("hermes_cli.config")
+
+    class FakeHermesGoalManager:
+        def __init__(self, session_id: str, *, default_max_turns: int = 20):
+            self.session_id = session_id
+            self.default_max_turns = default_max_turns
+
+        def evaluate_after_turn(self, last_response: str, **kwargs):
+            return {"status": "active", "should_continue": True, "message": ""}
+
+    setattr(goals_module, "DEFAULT_MAX_TURNS", 20)
+    setattr(goals_module, "GoalManager", FakeHermesGoalManager)
+    setattr(config_module, "load_config", lambda: {"goals": {"max_turns": 20}})
+    sys.modules["hermes_cli"] = hermes_cli_module
+    sys.modules["hermes_cli.goals"] = goals_module
+    sys.modules["hermes_cli.config"] = config_module
 
 
 def load_plugin():
@@ -586,6 +609,21 @@ class HermesSessionProjectTests(unittest.TestCase):
         self.assertEqual(37, result["max_turns"])
         self.assertEqual(37, manager.set.call_args.kwargs["max_turns"])
 
+    def test_goal_budget_fallback_inherits_hermes_default(self) -> None:
+        config_module = mock.Mock()
+        config_module.load_config.return_value = {"goals": {}}
+        goals_module = mock.Mock(DEFAULT_MAX_TURNS=41)
+
+        def fake_import(name: str):
+            if name == "hermes_cli.config":
+                return config_module
+            if name == "hermes_cli.goals":
+                return goals_module
+            raise ImportError(name)
+
+        with mock.patch.object(tools.importlib, "import_module", side_effect=fake_import):
+            self.assertEqual(41, tools._configured_goal_max_turns())
+
     def test_auto_start_refuses_missing_session_binding_or_plan(self) -> None:
         no_session = json.loads(tools.planning_with_files_start_auto(session_id=""))
         unbound = json.loads(tools.planning_with_files_start_auto(session_id="unbound-auto"))
@@ -629,6 +667,65 @@ class HermesSessionProjectTests(unittest.TestCase):
                 )
             )
         self.assertTrue(result["ok"])
+
+    def test_budget_exhaustion_disarms_pwf_and_routes_to_pwf_auto(self) -> None:
+        project = self.make_project("exhausted", "EXHAUSTED")
+        self.bind("exhausted-session", project)
+        auto_mode = importlib.import_module(PACKAGE_NAME + ".auto_mode")
+        auto_mode.arm_autonomous(project, project)
+        plan_before = project.joinpath("task_plan.md").read_bytes()
+
+        class FakeGoalManager:
+            def __init__(self, session_id: str):
+                self.session_id = session_id
+
+            def evaluate_after_turn(self, last_response: str, **kwargs):
+                return {
+                    "status": "paused",
+                    "should_continue": False,
+                    "verdict": "continue",
+                    "reason": "work remains",
+                    "message": "⏸ Goal paused: 50/50 turns used. Use /goal resume to keep going.",
+                }
+
+        self.assertTrue(plugin.install_goal_budget_bridge(FakeGoalManager))
+        decision = FakeGoalManager("exhausted-session").evaluate_after_turn("still working")
+
+        self.assertEqual("paused", decision["status"])
+        self.assertFalse(decision["should_continue"])
+        self.assertIn("turn budget exhausted", decision["message"].lower())
+        self.assertIn("/pwf-auto", decision["message"])
+        self.assertNotIn("/goal resume", decision["message"])
+        self.assertEqual(plan_before, project.joinpath("task_plan.md").read_bytes())
+        self.assertTrue(project.joinpath(".plan-attestation").is_file())
+        for name in (".mode", ".nonce", ".stop_blocks", ".gate_last_ledger"):
+            self.assertFalse(project.joinpath(name).exists())
+
+    def test_budget_bridge_leaves_non_pwf_goal_decision_unchanged(self) -> None:
+        original = {
+            "status": "paused",
+            "should_continue": False,
+            "verdict": "continue",
+            "reason": "work remains",
+            "message": "Use /goal resume to keep going",
+        }
+
+        class FakeGoalManager:
+            def __init__(self, session_id: str):
+                self.session_id = session_id
+
+            def evaluate_after_turn(self, last_response: str, **kwargs):
+                return dict(original)
+
+        self.assertTrue(plugin.install_goal_budget_bridge(FakeGoalManager))
+        decision = FakeGoalManager("unbound-session").evaluate_after_turn("still working")
+        self.assertEqual(original, decision)
+
+    def test_plugin_registration_installs_goal_budget_bridge(self) -> None:
+        ctx = FakeContext()
+        with mock.patch.object(plugin, "install_goal_budget_bridge", return_value=True) as install:
+            plugin.register(ctx)
+        install.assert_called_once_with()
 
     def test_auto_stop_disarms_plan_and_marks_goal_done(self) -> None:
         project = self.make_project("stop-auto", "STOP_AUTO")

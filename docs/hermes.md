@@ -210,6 +210,8 @@ The skill calls `planning_with_files_start_auto` without requiring user argument
 
 The run stops after the selected phase, not after the entire plan. On verified completion or a genuine blocker, the skill calls `planning_with_files_stop_auto`, which disarms PWF mode and marks the internal goal done. The user does not need to invoke `/goal` directly.
 
+The turn budget comes from Hermes `goals.max_turns`; if that key is absent, the adapter imports Hermes core's `DEFAULT_MAX_TURNS` instead of maintaining a duplicate default. If an unfinished phase exhausts the budget, Hermes keeps the standing goal paused while the PWF bridge disarms autonomous controls, preserves the incomplete planning files and attestation, and replaces the core `/goal resume` notice with `/pwf-auto`. The budget is never silently renewed.
+
 ### Switch the current session
 
 ```text
