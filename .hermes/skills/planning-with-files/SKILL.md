@@ -39,7 +39,10 @@ If catchup report shows unsynced context:
 ## Hermes Notes
 
 - Keep the original workflow below unchanged whenever possible.
-- In Hermes, the adapter plugin approximates lifecycle automation with `pre_llm_call` and `post_tool_call`.
+- In a messaging gateway, call `planning_with_files_bind_project` with the project root before init or status. Hermes supplies the opaque session identity; never ask the user for it and never include it in tool arguments.
+- One Hermes session has one active project binding. Rebinding switches only that session, while other sessions can continue different projects concurrently.
+- After binding, call init, status, and completion tools without `cwd` so they resolve the session project.
+- The adapter runs canonical `inject-plan.sh` in smart mode, which selects Goal, Next Step, Current Phase, the active phase, recent decisions, and recent progress.
 - Hermes currently has no full equivalent for the original `PreToolUse` behavior.
 - Hermes completion checking is surfaced by the adapter instead of a native stop-block hook.
 
@@ -199,9 +202,12 @@ Copy these templates to start:
 
 Helper scripts for automation:
 
-- `scripts/init-session.sh` — Initialize all planning files
-- `scripts/check-complete.sh` — Verify all phases complete
-- `scripts/session-catchup.py` — Recover context from previous session (v2.2.0)
+- `scripts/init-session.sh`: Initialize all planning files
+- `scripts/check-complete.sh`: Verify all phases complete
+- `scripts/session-catchup.py`: Recover context from previous session (v2.2.0)
+- `scripts/inject-plan.sh`: Emit canonical structure-aware context for the active plan
+- `scripts/resolve-plan-dir.sh`: Resolve active scoped plans consistently
+- `scripts/ledger-summary.sh`: Summarize autonomous-mode ledger activity
 
 ## Advanced Topics
 

@@ -183,6 +183,14 @@ IDE_MANIFESTS = {
     ".kiro": {},
 }
 
+# Hermes runs the canonical smart injector from the profile skill bundle. Keep
+# this narrow manifest explicit so the adapter does not carry a second parser.
+IDE_MANIFESTS[".hermes"] = {
+    "scripts/inject-plan.sh": ".hermes/skills/planning-with-files/scripts/inject-plan.sh",
+    "scripts/ledger-summary.sh": ".hermes/skills/planning-with-files/scripts/ledger-summary.sh",
+    "scripts/resolve-plan-dir.sh": ".hermes/skills/planning-with-files/scripts/resolve-plan-dir.sh",
+}
+
 
 def _build_agents_manifest():
     """Manifest for .agents/skills/ — the cross-tool Agent Skills standard.

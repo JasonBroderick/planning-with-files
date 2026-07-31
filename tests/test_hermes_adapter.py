@@ -92,6 +92,7 @@ class HermesAdapterTests(unittest.TestCase):
                 hooks_module.post_tool_call(
                     tool_name="write_file",
                     session_id="session-1",
+                    platform="cli",
                     args={"path": "app.py", "content": "print('hi')"},
                 )
                 payload = hooks_module.pre_llm_call(
@@ -115,6 +116,7 @@ class HermesAdapterTests(unittest.TestCase):
                 hooks_module.post_tool_call(
                     tool_name="patch",
                     session_id="session-empty",
+                    platform="cli",
                     args={"path": "app.py", "old_string": "hi", "new_string": "hello"},
                 )
                 payload = hooks_module.pre_llm_call(
@@ -203,11 +205,13 @@ class HermesAdapterTests(unittest.TestCase):
                 hooks_module.post_tool_call(
                     tool_name="write_file",
                     session_id="session-dedupe",
+                    platform="cli",
                     args={"path": "app.py", "content": "print('hi')"},
                 )
                 hooks_module.post_tool_call(
                     tool_name="patch",
                     session_id="session-dedupe",
+                    platform="cli",
                     args={"path": "app.py", "old_string": "hi", "new_string": "hello"},
                 )
                 payload = hooks_module.pre_llm_call(
@@ -231,6 +235,7 @@ class HermesAdapterTests(unittest.TestCase):
                 hooks_module.post_tool_call(
                     tool_name="write_file",
                     session_id="session-a",
+                    platform="cli",
                     args={"path": "app.py", "content": "print('hi')"},
                 )
                 payload_a = hooks_module.pre_llm_call(
@@ -259,7 +264,7 @@ class HermesAdapterTests(unittest.TestCase):
             old_pwd = os.getcwd()
             try:
                 os.chdir(tmpdir)
-                hooks_module.post_tool_call(tool_name="read_file", session_id="session-read", args={})
+                hooks_module.post_tool_call(tool_name="read_file", session_id="session-read", platform="cli", args={})
                 payload = hooks_module.pre_llm_call(
                     user_message="continue",
                     is_first_turn=False,
@@ -278,7 +283,7 @@ class HermesAdapterTests(unittest.TestCase):
             old_pwd = os.getcwd()
             try:
                 os.chdir(tmpdir)
-                hooks_module.post_tool_call(tool_name="write_file", session_id="session-empty-args", args={})
+                hooks_module.post_tool_call(tool_name="write_file", session_id="session-empty-args", platform="cli", args={})
                 payload = hooks_module.pre_llm_call(
                     user_message="continue",
                     is_first_turn=False,
@@ -300,6 +305,7 @@ class HermesAdapterTests(unittest.TestCase):
                 hooks_module.post_tool_call(
                     tool_name="patch",
                     session_id="session-patch-args",
+                    platform="cli",
                     args={"path": "app.py", "old_string": "a", "new_string": "b"},
                 )
                 payload = hooks_module.pre_llm_call(
