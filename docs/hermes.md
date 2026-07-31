@@ -84,7 +84,23 @@ POSIX example:
 export PWF_HERMES_PROJECT_ROOTS="$HOME/projects:/workspace"
 ```
 
-If this variable is unset, the plugin permits projects under the gateway process working directory and the Hermes home directory.
+If this variable is unset, the plugin checks a profile-writable roots file at:
+
+```text
+${PWF_HERMES_PROJECT_ROOTS_FILE:-${PWF_HERMES_STATE_DIR:-${HERMES_HOME:-$HOME/.hermes}/state/planning-with-files}/project-roots}
+```
+
+The file accepts one absolute project root per line. Empty lines and lines beginning with `#` are ignored. This is useful when a service manager does not expose custom environment variables.
+
+Example:
+
+```text
+# Project workspaces
+/home/user/projects
+/workspace
+```
+
+If neither the environment variable nor roots file is configured, the plugin permits projects under the gateway process working directory and the Hermes home directory.
 
 Optional state location:
 

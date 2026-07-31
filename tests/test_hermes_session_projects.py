@@ -518,6 +518,18 @@ class HermesSessionProjectTests(unittest.TestCase):
         self.assertIn("===END-PLAN-DATA-ABC123===", context)
         self.assertIn("CONTEXT TRUNCATED", context)
 
+    def test_profile_roots_file_allows_gateway_projects_without_environment_config(self) -> None:
+        roots_file = self.state_dir / "project-roots"
+        roots_file.parent.mkdir(parents=True, exist_ok=True)
+        roots_file.write_text("# One project root per line\n" + str(self.workspace) + "\n", encoding="utf-8")
+        project = self.make_project("roots-file", "ROOTS_FILE")
+        with mock.patch.dict(os.environ, {"PWF_HERMES_PROJECT_ROOTS": ""}, clear=False):
+            bindings.reset_store_cache()
+            result = self.bind("roots-file-session", project)
+            resolved = bindings.resolve_bound_project("roots-file-session")
+        self.assertTrue(result["ok"])
+        self.assertEqual(project.resolve(), resolved)
+
     def test_task_id_fallback_can_bind_project(self) -> None:
         project = self.make_project("task-id", "TASK_ID")
         ctx = FakeContext()

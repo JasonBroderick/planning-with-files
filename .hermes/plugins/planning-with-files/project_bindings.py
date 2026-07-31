@@ -9,6 +9,7 @@ from typing import Iterable
 
 _STATE_ENV = "PWF_HERMES_STATE_DIR"
 _ROOTS_ENV = "PWF_HERMES_PROJECT_ROOTS"
+_ROOTS_FILE_ENV = "PWF_HERMES_PROJECT_ROOTS_FILE"
 _DB_NAME = "bindings.sqlite3"
 _SCHEMA_VERSION = 1
 _DB_LOCK = threading.RLock()
@@ -39,13 +40,30 @@ def _state_dir() -> Path:
     return (_hermes_home() / "state" / "planning-with-files").resolve()
 
 
+def _configured_roots_file() -> Path:
+    explicit = os.environ.get(_ROOTS_FILE_ENV, "").strip()
+    return Path(explicit).expanduser().resolve() if explicit else _state_dir() / "project-roots"
+
+
+def _roots_from_file() -> list[str]:
+    roots_file = _configured_roots_file()
+    if not roots_file.is_file():
+        return []
+    try:
+        lines = roots_file.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    return [line.strip() for line in lines if line.strip() and not line.lstrip().startswith("#")]
+
+
 def _allowed_roots() -> list[Path]:
     configured = os.environ.get(_ROOTS_ENV, "").strip()
     candidates: Iterable[str | Path]
     if configured:
         candidates = [part for part in configured.split(os.pathsep) if part.strip()]
     else:
-        candidates = [Path.cwd(), _hermes_home()]
+        file_roots = _roots_from_file()
+        candidates = file_roots if file_roots else [Path.cwd(), _hermes_home()]
 
     roots: list[Path] = []
     seen: set[Path] = set()
