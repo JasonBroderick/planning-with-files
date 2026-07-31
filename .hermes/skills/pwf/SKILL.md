@@ -1,7 +1,7 @@
 ---
 name: pwf
 description: "Create or resume a planning-with-files session by binding the current Hermes session to a named workspace and maintaining task_plan.md, findings.md, and progress.md. Use when the user invokes /pwf, asks to run PWF inside a workspace, or wants to resume a file-backed project plan."
-version: 1.2.0
+version: 1.3.0
 author: Hermes Agent
 license: MIT
 compatibility: hermes-agent
@@ -120,13 +120,24 @@ See [references/hermes-discord-project-binding.md](references/hermes-discord-pro
 
 ## Output format
 
+Return exactly this structure after a successful bind and status verification. Substitute runtime values for angle-bracket placeholders. Do not prepend or append diagnostic history, implementation details, or prose.
+
 ```text
 PWF: ready
-project: /workspace/example
-plan: /workspace/example/task_plan.md
+
+project: <absolute project directory>
+plan: <absolute plan directory>/task_plan.md
 action: resumed existing planning files
-phase: Phase 2: Implementation
-next: Run the focused integration tests.
+files: task_plan.md, findings.md, progress.md
+status: <complete> complete, <in_progress> in_progress, <pending> pending
+
+phase: <current phase name> [in_progress]
+
+next: <the concrete action from ## Next Step>
+
+ready: session bound and planning context loaded
+
+user action: Run /pwf-auto to execute the active phase autonomously.
 ```
 
 ## Verification checklist
@@ -137,4 +148,4 @@ next: Run the focused integration tests.
 - [ ] Planning triple present and preserved
 - [ ] Exactly one current phase identified
 - [ ] `## Next Step` names one concrete action
-- [ ] Output reports project, plan, phase, and next action
+- [ ] Output follows the exact readiness structure and ends with the `/pwf-auto` user action

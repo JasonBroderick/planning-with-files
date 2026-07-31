@@ -18,6 +18,15 @@ class HermesCommandSkillPackagingTests(unittest.TestCase):
         self.assertNotIn("/workspace/skills/productivity", skill)
         self.assertTrue(reference.is_file())
         self.assertIn("Live plugin file-parity probe", reference.read_text(encoding="utf-8"))
+        for required_line in (
+            "PWF: ready",
+            "files: task_plan.md, findings.md, progress.md",
+            "status: <complete> complete, <in_progress> in_progress, <pending> pending",
+            "ready: session bound and planning context loaded",
+            "user action: Run /pwf-auto to execute the active phase autonomously.",
+        ):
+            self.assertIn(required_line, skill)
+        self.assertIn("Return exactly this structure", skill)
 
     def test_pwf_auto_skill_is_packaged_with_goal_tools(self):
         skill = (SKILLS_ROOT / "pwf-auto" / "SKILL.md").read_text(encoding="utf-8")
