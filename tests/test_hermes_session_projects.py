@@ -487,6 +487,34 @@ class HermesSessionProjectTests(unittest.TestCase):
         self.assertFalse(project.joinpath("task_plan.md").exists())
         self.assertTrue(completion["complete"])
 
+    def test_scoped_completion_uses_active_plan_with_packaged_hermes_skill(self) -> None:
+        project = self.workspace / "scoped-packaged-completion"
+        plan = project / ".planning" / "2026-01-01-reconciliation"
+        plan.mkdir(parents=True)
+        plan.joinpath("task_plan.md").write_text(
+            "# Scoped Plan\n\n## Current Phase\n\nPhase 1: Reconcile\n\n## Phases\n\n"
+            "### Phase 0: Baseline\n**Status:** complete\n\n"
+            "### Phase 1: Reconcile\n**Status:** complete\n",
+            encoding="utf-8",
+        )
+        project.joinpath(".planning", ".active_plan").write_text(
+            "2026-01-01-reconciliation\n", encoding="utf-8"
+        )
+        self.bind("scoped-packaged-session", project)
+
+        packaged_skill = REPO_ROOT / ".hermes" / "skills" / "planning-with-files"
+        with mock.patch.dict(
+            os.environ,
+            {"PLANNING_WITH_FILES_SKILL_ROOT": str(packaged_skill)},
+            clear=False,
+        ):
+            completion = json.loads(
+                tools.planning_with_files_check_complete(session_id="scoped-packaged-session")
+            )
+
+        self.assertTrue(completion["complete"])
+        self.assertIn("ALL PHASES COMPLETE (2/2)", completion["stdout"])
+
     def test_real_cli_post_hook_kwargs_preserve_cwd_reminder(self) -> None:
         project = self.make_project("cli-real", "CLI_REAL")
         old_cwd = Path.cwd()

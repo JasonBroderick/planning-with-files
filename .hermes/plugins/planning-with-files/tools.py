@@ -220,8 +220,10 @@ def planning_with_files_check_complete(
             {"ok": False, "error": f"Missing script: {script}", "skill_root": str(skill_root), "complete": False},
             ensure_ascii=False,
         )
+    plan_dir = resolve_active_plan_dir(project_dir) or project_dir.resolve()
+    plan_file = plan_dir / "task_plan.md"
     completed = subprocess.run(
-        ["sh", str(script)],
+        ["sh", str(script), str(plan_file)],
         capture_output=True,
         text=True,
         check=False,
